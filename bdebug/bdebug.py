@@ -23,7 +23,7 @@ RxThread(sock).start()
 
 while True:
     tx = input('bluetooth> ')
-    time.sleep(0.1)
     sock.send(tx)
+    time.sleep(.5)
 
 
