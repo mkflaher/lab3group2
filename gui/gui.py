@@ -1,17 +1,33 @@
-import gi
-import bluetooth
-import threading
-import time
+#Sean Flaherty
+#ECE 33334 - Robot Swarm Control Program
+
+#imports
+import gi #for gtk
+import bluetooth #
+import threading #for debug console
+import time #also for debug console
+import csv #for room map
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk
-import cairo
+import cairo #also for room map
 
+#global variables
 shape = ''
 surface = None
+room_table = []
 
 class MyWindow(Gtk.Window):
 
     def __init__(self,sock):
+        global room_table
+
+        with open('room1.csv',newline='') as room: #to create table for room drawing, make an array of tuples with coordinates
+            reader = csv.reader(room, delimiter=',', quotechar='|')
+            for row in reader:
+                room_table = room_table + [(int(row[0]),int(row[1]))]
+
+        print(room_table) #for debugging purposes
+
         Gtk.Window.__init__(self, title="Simple Notebook Example")
         self.set_border_width(3)
 
@@ -53,7 +69,7 @@ class MyWindow(Gtk.Window):
         room_map = Gtk.DrawingArea() #clickable area for route determination
         room_map.set_size_request(640,480)
         room_map.connect("draw", self.draw, [1,1,1], room_map)
-        room_map.connect("configure-event", self.configure_event)
+        #room_map.connect("configure-event", self.configure_event)
         room_map.connect("button-press-event", self.coordinate_clicked)
         room_map.set_events(room_map.get_events() | Gdk.EventMask.BUTTON_PRESS_MASK)
 
@@ -102,11 +118,30 @@ class MyWindow(Gtk.Window):
         sock.send('X')
 
     def draw(self, widget, event, color, da):
+        global room_table
         cr = widget.get_property('window').cairo_create()
         cr.rectangle(0,0,640,480)
         cr.set_source_rgb(color[0],color[1],color[2])
         cr.fill()
 
+        cr.rectangle(0,0,640,480)
+        cr.set_source_rgb(0,0,0)
+        cr.stroke()
+
+        #first tuple in room table is for room scale
+        x_scale = 640/room_table[0][0]
+        y_scale = 480/room_table[0][1]
+
+        cr.move_to(room_table[1][0]*x_scale,room_table[1][1]*y_scale)
+       
+        #draws the outline of any room, assuming it is a polygon
+        for point in room_table[2:]:
+            cr.line_to(point[0]*x_scale,point[1]*y_scale)
+            cr.move_to(point[0]*x_scale,point[1]*y_scale)
+
+        cr.stroke()
+
+        
     def configure_event(self, widget, event): #set up cairo canvas for clickable environment
         global surface
         if surface is not None:
