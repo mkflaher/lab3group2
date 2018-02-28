@@ -13,6 +13,7 @@ import cairo #also for room map
 
 #global variables
 shape = ''
+rxbuf = ''
 surface = None
 room_table = []
 
@@ -24,7 +25,7 @@ class MyWindow(Gtk.Window):
         with open('room1.csv',newline='') as room: #to create table for room drawing, make an array of tuples with coordinates
             reader = csv.reader(room, delimiter=',', quotechar='|')
             for row in reader:
-                room_table = room_table + [(int(row[0]),int(row[1]))]
+                room_table = room_table + [(float(row[0]),float(row[1]))]
 
         print(room_table) #for debugging purposes
 
@@ -135,9 +136,14 @@ class MyWindow(Gtk.Window):
         cr.move_to(room_table[1][0]*x_scale,room_table[1][1]*y_scale)
        
         #draws the outline of any room, assuming it is a polygon
-        for point in room_table[2:]:
-            cr.line_to(point[0]*x_scale,point[1]*y_scale)
-            cr.move_to(point[0]*x_scale,point[1]*y_scale)
+        for idx, point in enumerate(room_table[2:]):
+            if point == (-1,-1):
+                print('new shape at', idx)
+                print('cursor at',room_table[idx+3])
+                cr.move_to(room_table[idx+3][0]*x_scale,room_table[idx+3][1]*y_scale)
+            else:
+                cr.line_to(point[0]*x_scale,point[1]*y_scale)
+                cr.move_to(point[0]*x_scale,point[1]*y_scale)
 
         cr.stroke()
 
@@ -165,6 +171,16 @@ class MyWindow(Gtk.Window):
     def coordinate_clicked(self, widget, event): #this method will save the coordinates clicked for route calculation
         if event.button == Gdk.BUTTON_PRIMARY:
             print(event.x, event.y)
+
+class RxThread(threading.Thread):
+    def __init__(self,sock):
+        self.sock = sock
+        threading.Thread.__init__(self)
+    def run(self):
+        global rxbuf
+        while True:
+            rx = sock.recv(1024)
+            rxbuf += rx
 
 sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
 addr = ""
