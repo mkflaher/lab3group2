@@ -1,0 +1,46 @@
+(Coppied from a OneNote notebook. Images ommited here, but were just simple diagrams for pin connections.)
+
+https://www.pololu.com/file/download/LIS3MDL-AN4602.pdf?file_id=0J1090
+https://www.pololu.com/file/download/LIS3MDL.pdf?file_id=0J1089
+
+
+
+PIN	Description
+VDD	Regulated 3.3 V output. Almost 150 mA is available to power external components. (If you want to bypass the internal regulator, you can instead use this pin as a 3.3 V input with VIN disconnected.)
+VIN	This is the main 2.5 V to 5.5 V power supply connection. The SCL/SPC and SDA/SDI level shifters pull the I²C and SPI bus high bits up to this level.
+GND	The ground (0 V) connection for your power supply. Your I²C or SPI control source must also share a common ground with this board.
+SDA/SDI/SDO	Level-shifted I²C data line and SPI data in line (also doubles as SDO in 3-wire mode): HIGH is VIN, LOW is 0 V
+SCL/SPC	Level-shifted I²C/SPI clock line: HIGH is VIN, LOW is 0 V
+SDO/SA1	SPI data out line in 4-wire mode: HIGH is VDD, LOW is 0 V. This output is not level-shifted. Also used as an input to determine I²C slave address (see below).
+CS	SPI enable (chip select). Pulled up to VDD to enable I²C communication by default; drive low to begin SPI communication.
+DRDY	Data ready indicator, a 3.3-V-logic-level output. HIGH (3.3 V) indicates magnetic data can be read. This output is not level-shifted.
+INT	Programmable interrupt, a 3.3-V-logic-level output. This output is not level-shifted.
+
+For SPI
+https://www.pololu.com/file/0J1089/LIS3MDL.pdf
+The serial interface interacts with the application through 4 wires: 
+	1. CS - serial port enable
+	2. SPC - clock
+	3. SDI  - input
+	4. SDO - output
+
+Use 4 wire mode
+
+Read
+	1. CS low
+	2. SDI = (RW=1)+ (MS=1)+(AD = ) //from Master (Msp430)
+		a. RW = 1 //read
+		b. MS = 1 //auto increment
+		c. AD = //address of the register on the slave
+			i. OUT_X_L (28h), OUT_X_H(29h)
+			ii. OUT_Y_L(2Ah), OUT_Y_H(2Bh)
+	3. SDO = data that will be read from the device (magnetometer -> MSP430)
+		a. can be 2 bytes if 
+
+		
+		
+
+Magnetic data
+The magnetic data is expressed with two registers for each of the X, Y, and Z directions. Concatenate OUT_X_H and OUT_X_L to get a two's complement number. Default is little endian.  
+
+Earth's magnetic field is 0.65 gauss. Sensor's noise level is 5 miligauss 

@@ -1,0 +1,149 @@
+/* --COPYRIGHT--,BSD
+ * Copyright (c) 2017, Texas Instruments Incorporated
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * *  Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * *  Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * *  Neither the name of Texas Instruments Incorporated nor the names of
+ *    its contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * --/COPYRIGHT--*/
+/******************************************************************************
+ * MSP432 Empty Project
+ *
+ * Description: An empty project that uses DriverLib
+ *
+ *                MSP432P401
+ *             ------------------
+ *         /|\|                  |
+ *          | |                  |
+ *          --|RST               |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ * Author: 
+*******************************************************************************/
+/* DriverLib Includes */
+#include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+
+/* Standard Includes */
+#include <stdint.h>
+#include <stdbool.h>
+
+int dutycycle = 50;
+
+/*9600 Baud UART setup - 12MHz clk*/
+const eUSCI_UART_Config uartConfig =
+{
+ EUSCI_A_UART_CLOCKSOURCE_SMCLK,
+ 78,
+ 2,
+ 0,
+ EUSCI_A_UART_NO_PARITY,
+ EUSCI_A_UART_LSB_FIRST,
+ EUSCI_A_UART_ONE_STOP_BIT,
+ EUSCI_A_UART_MODE,
+ EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION
+};
+
+/*PWM Setup - 75% duty cycle*/
+const TIMER_A_PWMConfig pwmConfig =
+{
+ TIMER_A_CLOCKSOURCE_SMCLK,
+ TIMER_A_CLOCKSOURCE_DIVIDER_12,
+ 1000000,
+ TIMER_A_CAPTURECOMPARE_REGISTER_0,
+ TIMER_A_OUTPUTMODE_TOGGLE,
+ 750000
+};
+
+//extern void EUSCIA2_IRQHandler(void);
+
+int main(void)
+{
+    /* Stop Watchdog  */
+    MAP_WDT_A_holdTimer();
+
+    /*Set DCO Freq at 12MHz*/
+    MAP_CS_setDCOCenteredFrequency(CS_DCO_FREQUENCY_12);
+
+    /*Set P3.2 & P3.3 as UART ports*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P3, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    //MAP_UART_initModule(EUSCI_A0_BASE, &uartConfig);   //UARTA0 9600 Baud
+    //MAP_UART_initModule(EUSCI_A1_BASE, &uartConfig);   //UARTA1 9600 Baud
+    MAP_UART_initModule(EUSCI_A2_BASE, &uartConfig);   //UARTA2 9600 Baud
+    //MAP_UART_initModule(EUSCI_A3_BASE, &uartConfig);   //UARTA3 9600 Baud
+
+    /*Enable the Receive interrupts on UART*/
+    //MAP_UART_enableInterrupt(EUSCI_A0_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+    //MAP_UART_enableInterrupt(EUSCI_A1_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+    MAP_UART_enableInterrupt(EUSCI_A2_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+    //MAP_UART_enableInterrupt(EUSCI_A3_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+
+    //MAP_UART_enableModule(EUSCI_A0_BASE);   //enable UART A0
+    //MAP_UART_enableModule(EUSCI_A1_BASE);   //enable UART A1
+    MAP_UART_enableModule(EUSCI_A2_BASE);   //enable UART A2
+    //MAP_UART_enableModule(EUSCI_A3_BASE);   //enable UART A3
+
+    /*PWM Generation*/
+    TIMER_A_generatePWM(TIMER_A0_BASE, pwmConfig);
+
+   /*Set PWM Output pin*/
+    MAP_GPIO_setAsPeripheralModuleFunctionOutputPin(GPIO_PORT_P2, GPIO_PIN4 | GPIO_PIN6, GPIO_PRIMARY_MODULE_FUNCTION);)
+
+    /*Enable Pins set*/
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P5, GPIO_PIN1 | GPIO_PIN6);
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P6, GPIO_PIN6 | GPIO_PIN7);
+
+    /*while(1)
+    {
+        
+    }*/
+}
+
+void EUSCIA2_IRQHandler(void){
+    int status = MAP_UART_getEnabledInterruptStatus(EUSCI_A2_MODULE);
+    char data = MAP_UART_receiveData(EUSCI_A2_MODULE);
+    MAP_UART_transmitData(EUSCI_A0_BASE, data);
+    if(status & EUSCI_A_UART_RECEIVE_INTERRUPT){
+            /*Oversimplified. Need to take into account current direction to move in the proper direction. Nested Switch will probably be used.*/
+        switch(data){
+        case n:
+            //move north one wheel rotation
+            break;
+        case s:
+            //move south one wheel rotation
+            break;
+        case e:
+            //move east one wheel rotation
+            break;
+        case w:
+            //move west one wheel rotation
+            break;
+        }
+    }
+}
