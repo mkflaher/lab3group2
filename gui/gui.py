@@ -302,7 +302,7 @@ class MyWindow(Gtk.Window):
 
             room_grid = np.zeros((y_blocks,x_blocks))
 
-            for y_iter, row in enumerate(room_grid): #ugly O(n^3) nested loop
+            for y_iter, row in enumerate(room_grid):
                 for x_iter,tile in enumerate(row):
                     x_coords1 = np.where(room_sample[:,0] >= x_iter*div)
                     x_coords2 = np.where(room_sample[:,0] < (x_iter+1)*div)
@@ -314,7 +314,7 @@ class MyWindow(Gtk.Window):
                     #print(y_coords)
                     region = np.intersect1d(x_coords,y_coords)
                     #print(region)
-                    if region != np.array([]): #optimize this later if necessary
+                    if region != np.array([]): 
                         room_grid[y_iter][x_iter] = 1
 
             padding = np.ones((y_blocks+2,x_blocks+2))
