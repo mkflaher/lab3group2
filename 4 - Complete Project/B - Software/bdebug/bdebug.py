@@ -14,7 +14,7 @@ class RxThread(threading.Thread):
                 print(rx)
 
 sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-addr = "DC:44:B6:93:4A:3F"
+addr = "00:06:66:DA:08:67"
 port = 1
 
 sock.connect((addr,port))

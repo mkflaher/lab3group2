@@ -163,7 +163,7 @@ class MyWindow(Gtk.Window):
             txchar = 't'
         else:
             txchar = 'l' #default shape should be straight line
-        print("Character to be sent is: %s", txchar)
+        print("Character to be sent is:", txchar)
         sock.send(txchar)
 
     def stop_clicked(self, widget):
