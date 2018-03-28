@@ -24,6 +24,7 @@ y_scale = 0
 x_size = 0
 y_size = 0
 start = (0,0)
+instruction = ''
 
 class MyWindow(Gtk.Window):
 
@@ -78,7 +79,7 @@ class MyWindow(Gtk.Window):
         shape_button.connect("clicked", self.shape_clicked)
 
         start_button = Gtk.Button(label = "Start")
-        #start_button.connect("clicked",self.start_clicked)
+        start_button.connect("clicked",self.start_clicked)
 
         stop_button = Gtk.Button(label = "Emergency Stop")
         stop_button.connect("clicked", self.stop_clicked)
@@ -165,6 +166,11 @@ class MyWindow(Gtk.Window):
             txchar = 'l' #default shape should be straight line
         print("Character to be sent is:", txchar)
         sock.send(txchar)
+
+    def start_clicked(self,widget):
+        global instruction
+        print('instruction: ',instruction)
+        sock.send(instruction + '\r')
 
     def stop_clicked(self, widget):
         print('Character to be sent is: X')
@@ -327,7 +333,7 @@ class MyWindow(Gtk.Window):
             goal_idx = (np.floor(y/(y_scale*div))+1,np.floor(x/(x_scale*div))+1)
             print('goal: ',goal_idx)
 
-            solution = self.solve(room_grid,start_idx,goal_idx)
+            solution = self.solve(room_grid,start_idx,goal_idx,div)
             if solution is not None:
                 self.drawpath(solution,div)
                 break
@@ -346,7 +352,9 @@ class MyWindow(Gtk.Window):
             cr.move_to(step[1]*div*x_scale,step[0]*div*y_scale)
         cr.stroke()
 
-    def solve(self,grid,start,goal): #the actual pathfinding algorithm
+    def solve(self,grid,start,goal,div): #the actual pathfinding algorithm
+        global instruction
+        global wheel_circumference
         print(grid)
         path = np.array([[goal[0],goal[1],0]]) #start at the goal point with counter 0
         ctr = 1 #path counter
@@ -446,6 +454,24 @@ class MyWindow(Gtk.Window):
                 route = np.vstack((route,current_node))
                 
             print('route:',route)
+
+            instruction = '' #this is what the queen robot will receive
+
+            for n,point in enumerate(route[:-1]):
+                move = route[n+1] - point
+                print(move)
+
+                if (move==np.array([-1,0,-1])).all():
+                    instruction += 'U'*int(div/wheel_circumference)
+                elif (move==np.array([1,0,-1])).all():
+                    instruction += 'D'*int(div/wheel_circumference)
+                elif (move==np.array([0,-1,-1])).all():
+                    instruction += 'L'*int(div/wheel_circumference)
+                elif (move==np.array([0,1,-1])).all():
+                    instruction += 'R'*int(div/wheel_circumference)
+
+            print(instruction)
+
             return route
 
 class RxThread(threading.Thread):
@@ -469,11 +495,11 @@ class RxThread(threading.Thread):
         return self._stop.isSet()
 
 sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-addr = ""
+addr = "00:06:66:DA:08:67"
 port = 1
 dev_mode = True #used for developing program while not connected over bluetooth
 if not dev_mode:
-    sock.connect((port,addr))
+    sock.connect((addr,port))
 
 win = MyWindow(sock) #pass socket into gtk window for it to use
 win.connect("delete-event", Gtk.main_quit)
