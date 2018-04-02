@@ -10,6 +10,7 @@
  *      c. Drive
  **/
 #include "msp430g2553.h"
+#include <msp430.h>
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
@@ -20,31 +21,28 @@
 #define MISO BIT6     //SPI
 #define MOSI BIT7     //SPI
 
-#define CS_OUT    P2OUT
-#define CS_DIR    P2DIR
-#define CS   BIT0     //Serial port enable (drive low to enable magnetometer)
-
 //magnetometer addresses for data
 #define OUT_X_L 28h //X low byte
-#define OUT_X_L 29h //X high byte
+#define OUT_X_H 29h //X high byte
 #define OUT_Y_L 2Ah //Y low byte
 #define OUT_Y_H 2Bh //Y high byte
 
+#define instructionXL 0b11101000;
 
 ////////////////////////////////////////////////////////////////////////////////////
 //       Variables
 ////////////////////////////////////////////////////////////////////////////////////
 const char string[] = { "$$$" };
-char btrx[64] = {""};  //bluetooth rx buffer
+char btrx[16] = {""};  //bluetooth rx buffer
 char *endptr;
 //unsigned int i;       // tx counter
 unsigned int j;         // rx counter
 
-char mrx[64] = {""};   //magnetometer rx buffer
+char mrx[16] = {""};   //magnetometer rx buffer
 unsigned int k;         //rx counter
 
 double driveVector[2]; //holds the x and y coordinates of destination of drive vector
-int go;                //Boolean flag. 1 = drive, 0 = stop
+char go;               //Boolean flag. 1 = drive, 0 = stop
 
 double heading;
 double distance;
@@ -55,7 +53,7 @@ double targetDistance;
 //      function declarations
 ///////////////////////////////////////////////////////////////////////////////////
 void setup(void);
-void SPI_TX(void);
+void SPI_TX(char toSend);
 void drive(void);
 double readMagnetometer(void);
 
@@ -65,9 +63,18 @@ double readMagnetometer(void);
 int main(void){
     setup();
     go = 0;
+
+
     while (1) //always
     {
-        while(go && distance){ //Go mode and distance to go
+       // SPI_TX(0b10001111);//read dummy register output: 0011 1101 (3Dh)
+        SPI_TX(0b10111100);
+
+        //SPI_TX(0b10101000); //read = 1, Multiple = 0, address= 28h
+
+        //SPI_TX(0b10101001); //read = 1, Multiple = 0, address= 29h
+
+     /*   while(go && distance){ //Go mode and distance to go
             //where am I?
             heading = readMagnetometer();
 
@@ -83,6 +90,7 @@ int main(void){
                 //turn left
             }
         }
+       */
     }
 }
 
@@ -97,13 +105,14 @@ void setup(void){
         DCOCTL = CALDCO_1MHZ;
 
         //i = 0;
+        k=0;
 
         P2DIR |= 0xFF; // All P2.x outputs
         P2OUT &= 0x00; // All P2.x reset
 
         P1DIR |= BIT0; //red LED for testing purposes
-        P1SEL |= RXD + TXD + MOSI + MISO + SCLK + CS; // setup pins for UART and SPI
-        P1SEL2 |= RXD + TXD + MOSI + MISO + SCLK + CS; // "" ""
+        P1SEL |= RXD + TXD + MOSI + MISO + SCLK; // setup pins for UART and SPI
+        P1SEL2 |= RXD + TXD + MOSI + MISO + SCLK; // "" ""
         P1OUT &= 0x00;
 
         //UART setup
@@ -120,39 +129,37 @@ void setup(void){
         UCB0BR0 = 10; //100khz divider
         UCB0BR1 = 0; //second byte of divider (0)
         UCB0CTL1 &= ~UCSWRST; // **Initialize USCI state machine**
-        CS_DIR |= CS;   //setup slave select pin
-        CS_OUT |= CS;
 
         UC0IE |= UCA0RXIE; // Enable USCI_A0 RX interrupt
+        UC0IE |= UCB0RXIE;
         __bis_SR_register(GIE); // Enter LPM0 w/ int until Byte RXed
 }
 
 /**
  * SPI Transmit
  */
-/*void SPI_TX(void){
-    for(int x=0; x<=j; x++){
-        UCB0TXBUF = rx[x]; //send string index by index
-        __delay_cycles(100); // 100 khz divider => 10 us per bit => 80 us per byte
-        //best practice is to ensure UCB0TXIFG is ready
-    }
-}*/
-void SendSPIData(char val){
+void SPI_TX(char toSend){
     while(!(IFG2 & UCB0TXIFG)); //TX buffer ready?
-    UCB0TXBUF = val
+    UCB0TXBUF = toSend;
+    __delay_cycles(100); // 100 khz divider => 10 us per bit => 80 us per byte
+        //best practice is to ensure UCB0TXIFG is ready
 }
 
+/*
 //__attribute__((ramfunc)) //attempt to move operation to ram. I don't understand the blue error messages
 double readMagnetometer(void){
     //SPI connection
     CS_OUT &= ~(CS); //turn on slave select (active low)
-    SendSPIData(); //send address for OUT_X_L register on magnetometer
+    char getXL = 0b11000000^OUT_X_L;
+    SPI_TX(getXL); //send address for OUT_X_L register on magnetometer
     //calculate heading
     double yGaussData = 10;
     double xGaussData = 20;
     double compasheading = atan(yGaussData/xGaussData);
     return compasheading;
 }
+*/
+
 ////////////////////////////////////////////////////////////////////////////////////
 // UART Bluetooth interrupt
 ////////////////////////////////////////////////////////////////////////////////////
@@ -171,9 +178,10 @@ __interrupt void USCI0TX_ISR(void)
 /** Receive Bluetooth over UART(USCA), Receive magnetometer data over SPI (USCB)
  *  -> parse bluetooth -> drive vector
  */
-#pragma vector=USCIAB0RX_VECTOR
-__interrupt void USCI0RX_ISR(void)
-{
+//#pragma vector=USCIAB0RX_VECTOR
+//__interrupt void USCI0RX_ISR(void)
+//{
+ /*
     //Bluetooth
     if (UCA0RXBUF != '\r') // not carriage return?
     {
@@ -197,14 +205,19 @@ __interrupt void USCI0RX_ISR(void)
         targetHeading = atan(driveVector[0]/driveVector[1]);                    //angle = arctan(y/x)
         targetDistance = sqrt(pow(driveVector[0], 2) + pow(driveVector[1], 2)); //magnitude = sqrt(x^2+ y^2)
     }
+*/
+//}
 
-    //magnetometer
-    if(UCB0RXBUF){
+#pragma vector=USCIAB0RX_VECTOR
+__interrupt void USCIB0RX_ISR(void)
+{
+//magnetometer
+    mrx[k] = UCB0RXBUF;   //magnetometer rx buffer
+    k++;         //rx counter
+    P1OUT |= BIT0;                          //light LED
+    //clear interrupt flag
 
-    }
 }
-
-
 /** old code for UART
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR(void)
