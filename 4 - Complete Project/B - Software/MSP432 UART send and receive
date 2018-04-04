@@ -1,0 +1,184 @@
+/* --COPYRIGHT--,BSD
+ * Copyright (c) 2017, Texas Instruments Incorporated
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * *  Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * *  Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * *  Neither the name of Texas Instruments Incorporated nor the names of
+ *    its contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * --/COPYRIGHT--*/
+/******************************************************************************
+ * MSP432 Empty Project
+ *
+ * Description: An empty project that uses DriverLib
+ *
+ *                MSP432P401
+ *             ------------------
+ *         /|\|                  |
+ *          | |                  |
+ *          --|RST               |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ *            |                  |
+ * Author: 
+*******************************************************************************/
+/* DriverLib Includes */
+#include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+
+/* Standard Includes */
+#include <stdint.h>
+#include <stdbool.h>
+
+const eUSCI_UART_Config uartConfig =
+{
+ EUSCI_A_UART_CLOCKSOURCE_SMCLK,
+ 78,
+ 2,
+ 0,
+ EUSCI_A_UART_NO_PARITY,
+ EUSCI_A_UART_LSB_FIRST,
+ EUSCI_A_UART_ONE_STOP_BIT,
+ EUSCI_A_UART_MODE,
+ EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION
+};
+
+extern void EUSCIA2_IRQHandler(void);
+extern void transmitChar(void);
+extern void addInstruction(void);
+
+uint8_t instructions[1024];
+int transmitCnt = 0;
+int arrayCnt = 0;
+uint8_t receiveByte = 0;
+bool ready;
+
+int main(void)
+{
+
+
+    /* Stop Watchdog  */
+    MAP_WDT_A_holdTimer();
+
+    /*Set DCO Freq at 12MHz*/
+    MAP_CS_setDCOCenteredFrequency(CS_DCO_FREQUENCY_12);
+
+    /*Set P3.2 & P3.3 as UART ports*/
+    /*EUSCIA2*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P3, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set P1.2 & P1.3 as UART ports*/
+    /*EUSCIA0*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P1, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set P2.2 & P2.3 as UART ports*/
+    /*EUSCIA1*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P2, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set up P1.0 as output*/
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P1, GPIO_PIN0);
+
+    /*Initialize LED off*/
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P1, GPIO_PIN0);
+
+    MAP_UART_initModule(EUSCI_A2_BASE, &uartConfig);   //UARTA2 9600 Baud
+
+    MAP_UART_initModule(EUSCI_A0_BASE, &uartConfig);   //UARTA0 9600 Baud
+
+    MAP_UART_initModule(EUSCI_A1_BASE, &uartConfig);    //UARTA1 9600 Baud
+
+    MAP_UART_enableModule(EUSCI_A2_BASE);   //enable UART A2
+
+    MAP_UART_enableModule(EUSCI_A0_BASE);   //enable UART A0
+
+    MAP_UART_enableModule(EUSCI_A1_BASE);   //enable UART A1
+
+    /*Enable receive interrupt for UART*/
+    MAP_UART_enableInterrupt(EUSCI_A2_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+
+    MAP_Interrupt_enableInterrupt(INT_EUSCIA2);
+
+    //MAP_Interrupt_enableSleepOnIsrExit();
+    MAP_Interrupt_enableMaster();
+
+    while(1)
+    {
+        /*if(ready == true){
+            int count = 0;
+            while(instructions[count] != '\r'){
+                switch(receiveByte){
+                case 'u':
+                    MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+                    break;
+                case 'd':
+                    MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+                    break;
+                case 'l':
+                    MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+                    break;
+                case 'r':
+                    MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+                    break;
+                }
+            }
+        }*/
+
+        MAP_PCM_gotoLPM0();
+
+    }
+}
+
+void EUSCIA2_IRQHandler(void){
+    uint32_t status = MAP_UART_getEnabledInterruptStatus(EUSCI_A2_BASE);
+
+    MAP_UART_clearInterruptFlag(EUSCI_A2_BASE, status);
+
+    if(status & EUSCI_A_UART_RECEIVE_INTERRUPT_FLAG){
+        receiveByte = MAP_UART_receiveData(EUSCI_A2_BASE);
+        /*if (receiveByte == 'u' || receiveByte == 'l' || receiveByte == 'r' || receiveByte == 'd'){
+            instructions[arrayCnt] = receiveByte;
+            arrayCnt++;
+        }
+        else if(receiveByte == '\r'){
+            instructions[arrayCnt] = receiveByte;
+            transmitChar();
+            ready = true;
+        }*/
+        //addInstruction();
+        MAP_UART_transmitData(EUSCI_A0_BASE, receiveByte);
+        //MAP_UART_transmitData(EUSCI_A1_BASE, receiveByte);
+        switch(receiveByte){
+        case 'l':
+            MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+            break;
+        case 'b':
+            MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+            break;
+        }
+            //MAP_Interrupt_disableSleepOnIsrExit();
+    }
+
+}
