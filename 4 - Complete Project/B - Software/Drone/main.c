@@ -71,7 +71,8 @@ unsigned int k;         //rx counter
 ///////////////////////////////////////////////////////////////////////////////////
 void setup(void);
 void SPI_TX(char toSend);
-void drive(char direction);
+void drive(char command);
+void dataToQueen();
 
 ///////////////////////////////////////////////////////////////////////////////////
 //      Start of main program
@@ -166,7 +167,7 @@ void setup(void){
  */
 void SPI_TX(char toSend){
     P1OUT &= ~BIT4;
-    while(!(IFG2 & UCB0TXIFG)); //TX buffer ready?
+    //while(!(IFG2 & UCB0TXIFG)); //TX buffer ready?
     UCB0TXBUF = toSend;
     __delay_cycles(1000);
         //best practice is to ensure UCB0TXIFG is ready
@@ -175,8 +176,8 @@ void SPI_TX(char toSend){
 /**
  * Drive the tank based on the command received: stop, forward, right, left
  */
-void drive( char direction){
-    switch(direction) {
+void drive( char command){
+    switch(command) {
        case 's'  :   //stop
           //clear enable bits
           P2OUT &= ~(enableA + enableB+ h1+h2+h3+h4);
@@ -202,14 +203,37 @@ void drive( char direction){
           P2OUT |= enableA + enableB + h1 + h4;
           break;
       case '+': //fast
-          TA1CCR1  = 10000;
+          //Increment TA1CCR1 up to max of 2000
+          if(TA1CCR1 < 20000){
+              TA1CCR1  += 2000;
+          }
           break;
       case '-': //slow
-          TA1CCR1  = 5000;
+          //decrement TA1CCR1 to min of 0
+          if(TA1CCR1 > 0){
+              TA1CCR1  -= 2000;
+          }
           break;
       //default:
-          //command is not recognized
+          //command is not recognized, nothing happens
      }
+}
+
+
+/*
+ * Read mangnetometer then transmit data over bluetooth
+ */
+void dataToQueen()
+{
+    //get magnetometer data
+    SPI_TX(0b10001111);//read dummy register output: 0011 1101 (3Dh)
+
+    //transmit magnetometer data
+    for(i=0; i > sizeof mrx; i=i+1)
+    {
+        UC0IE |= UCA0TXIE; //enable USCI_A0 TX interrupt
+        UCA0TXBUF = mrx[i];
+    }
 }
 
 
@@ -221,7 +245,7 @@ void drive( char direction){
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR(void)
 {
-  //  UCA0TXBUF = string[i++]; // TX next character
+    UCA0TXBUF = mrx[i]; // TX next character
     if (i == sizeof(string) - 1){ // TX over?
         UC0IE &= ~UCA0TXIE; // Disable USCI_A0 TX interrupt
         __delay_cycles(10000); //delay for response
@@ -241,18 +265,13 @@ __interrupt void USCIAB0RX_ISR(void)
         {
             P1OUT ^= BIT0;     //toggle LED
             btrx[j] = UCA0RXBUF; //load in the command to memory
-            drive(btrx[j]);  //drive if the command is 'l', 'r', 'f', or 'b'
+            drive(btrx[j]);  //drive if the command is 'l', 'r', 'f', 'b', or '+', '-'
 
             if(btrx[j] == 'm') //magnetometer data requested
             {
-                //get magnetometer data
-                SPI_TX(0b10001111);//read dummy register output: 0011 1101 (3Dh)
-                //transmit magnetometer data
-                for(i=0; i > sizeof mrx; i=i+1)
-                {
-                    UC0IE |= UCA0TXIE; //enable USCI_A0 TX interrupt
-                    UCA0TXBUF = mrx[i];
-                }
+                //clear interrupt
+                IE2 &= ~UCA0RXIE;
+                dataToQueen();
             }
             //j++;
         }
