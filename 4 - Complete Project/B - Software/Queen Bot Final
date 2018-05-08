@@ -1,0 +1,485 @@
+/*Project Lab 3
+ *Prof: William Ray
+ *Group 2 - Robot Swarm
+ */
+
+/* DriverLib Includes */
+#include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+#include <ti/devices/msp432p4xx/driverlib/rom.h>
+#include <ti/devices/msp432p4xx/driverlib/rom_map.h>
+
+/* Standard Includes */
+#include <stdint.h>
+#include <stdbool.h>
+#include <ctype.h>
+#include <string.h>
+
+const eUSCI_UART_Config uartConfig =
+{
+ EUSCI_A_UART_CLOCKSOURCE_SMCLK,
+ 78,
+ 2,
+ 0,
+ EUSCI_A_UART_NO_PARITY,
+ EUSCI_A_UART_LSB_FIRST,
+ EUSCI_A_UART_ONE_STOP_BIT,
+ EUSCI_A_UART_MODE,
+ EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION
+};
+
+const eUSCI_UART_Config uartConfigHC =
+{
+ EUSCI_A_UART_CLOCKSOURCE_SMCLK,
+ 19,
+ 8,
+ 0,
+ EUSCI_A_UART_NO_PARITY,
+ EUSCI_A_UART_LSB_FIRST,
+ EUSCI_A_UART_ONE_STOP_BIT,
+ EUSCI_A_UART_MODE,
+ EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION
+};
+
+    Timer_A_PWMConfig PWM1 =
+{
+ TIMER_A_CLOCKSOURCE_SMCLK,
+ TIMER_A_CLOCKSOURCE_DIVIDER_12,
+ 20000,
+ TIMER_A_CAPTURECOMPARE_REGISTER_1,
+ TIMER_A_OUTPUTMODE_RESET_SET,
+ 10000
+};
+
+Timer_A_PWMConfig PWM2 =
+{
+ TIMER_A_CLOCKSOURCE_SMCLK,
+ TIMER_A_CLOCKSOURCE_DIVIDER_12,
+ 20000,
+ TIMER_A_CAPTURECOMPARE_REGISTER_2,
+ TIMER_A_OUTPUTMODE_RESET_SET,
+ 20000
+};
+
+Timer_A_UpModeConfig delayTimer =
+{
+ TIMER_A_CLOCKSOURCE_ACLK,
+ TIMER_A_CLOCKSOURCE_DIVIDER_1,
+ 9400,
+ TIMER_A_TAIE_INTERRUPT_ENABLE,
+ TIMER_A_CCIE_CCR0_INTERRUPT_ENABLE,
+ TIMER_A_DO_CLEAR
+};
+
+
+extern void EUSCIA2_IRQHandler(void);
+void rightTurn(void);
+void leftTurn(void);
+void drive_forward(void);
+void drone1_forward(int);
+void drone2_forward(int);
+void drone1_left(void);
+void drone2_left(void);
+void drone1_right(void);
+void drone2_right(void);
+
+volatile char HC[128];
+volatile int i = 0;
+volatile int start = 0;
+volatile int j = 0;
+volatile char drive[128];
+volatile int drive_start = 0;
+volatile int l = 0;
+volatile int k = 0;
+volatile int drive_count = 0;
+volatile int m = 0;
+
+volatile int positioningT = 0;
+volatile int positioningS = 0;
+volatile int positioningB = 0;
+volatile int positioningL = 0;
+
+volatile int timerA1 = 0;
+
+int main(void){
+
+
+    /* Stop Watchdog  */
+    MAP_WDT_A_holdTimer();
+
+    /*Set DCO Freq at 12MHz*/
+    MAP_CS_setDCOCenteredFrequency(CS_DCO_FREQUENCY_12);
+
+    /*Set up timer for accurate delays*/
+    MAP_CS_initClockSignal(CS_ACLK, CS_VLOCLK_SELECT, CS_CLOCK_DIVIDER_1);
+    MAP_Timer_A_configureUpMode(TIMER_A1_BASE, &delayTimer);
+    MAP_Timer_A_enableInterrupt(TIMER_A1_BASE);
+
+
+    /*Set P3.2 & P3.3 as UART ports*/
+    /*EUSCIA2*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P3, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set P1.2 & P1.3 as UART ports*/
+    /*EUSCIA0*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P1, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set P2.2 & P2.3 as UART ports*/
+    /*EUSCIA1*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P2, GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set P9.6 and P9.7 as UART Ports*/
+    /*EUSCIA3*/
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P9, GPIO_PIN6 | GPIO_PIN7, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Set-up PWM outputs and Enables*/
+    //PWM output
+    MAP_GPIO_setAsPeripheralModuleFunctionOutputPin(GPIO_PORT_P2, GPIO_PIN4, GPIO_PRIMARY_MODULE_FUNCTION);
+    MAP_GPIO_setAsPeripheralModuleFunctionOutputPin(GPIO_PORT_P2, GPIO_PIN5, GPIO_PRIMARY_MODULE_FUNCTION);
+    //Enable Outputs
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P2, GPIO_PIN6 | GPIO_PIN7);
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P3, GPIO_PIN0);
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P5, GPIO_PIN6);
+    MAP_GPIO_setAsInputPinWithPullDownResistor(GPIO_PORT_P1, GPIO_PIN7);
+
+    //initialize
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6 | GPIO_PIN7);
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);
+
+    //Start PWM
+    MAP_Timer_A_generatePWM(TIMER_A0_BASE, &PWM1);
+    MAP_Timer_A_generatePWM(TIMER_A0_BASE, &PWM2);
+
+    /*Set up P1.0 as output*/
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P1, GPIO_PIN0);
+
+    /*Initialize LED off*/
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P1, GPIO_PIN0);
+
+    MAP_GPIO_setAsOutputPin(GPIO_PORT_P4, GPIO_PIN1);
+
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P4, GPIO_PIN1);
+
+    /*Set push button for debug of GPIO interrupt*/
+    MAP_GPIO_setAsPeripheralModuleFunctionOutputPin(GPIO_PORT_P1, GPIO_PIN4, GPIO_PRIMARY_MODULE_FUNCTION);
+
+    /*Initialize UART at 9600 Baud Rate*/
+    MAP_UART_initModule(EUSCI_A2_BASE, &uartConfig);   //UARTA2 9600 Baud
+
+    MAP_UART_initModule(EUSCI_A0_BASE, &uartConfigHC);   //UARTA0 38400 Baud
+
+    MAP_UART_initModule(EUSCI_A1_BASE, &uartConfigHC);    //UARTA1 38400 Baud
+
+    MAP_UART_initModule(EUSCI_A3_BASE, &uartConfigHC);
+
+    /*Enable UART modules*/
+    MAP_UART_enableModule(EUSCI_A2_BASE);   //enable UART A2
+
+    MAP_UART_enableModule(EUSCI_A0_BASE);   //enable UART A0
+
+    MAP_UART_enableModule(EUSCI_A1_BASE);   //enable UART A1
+
+    MAP_UART_enableModule(EUSCI_A3_BASE);
+
+    /*Enable receive interrupt for UART on A2*/
+    MAP_UART_enableInterrupt(EUSCI_A2_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);
+
+    MAP_Interrupt_enableInterrupt(INT_EUSCIA2); //enable UART interrupts on USCIA2
+
+    MAP_GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN7);  //enable GPIO interrupts on port 1 pin 5
+
+    MAP_UART_enableInterrupt(EUSCI_A0_BASE, EUSCI_A_UART_RECEIVE_INTERRUPT);    //enable receive interrupt for UART on A0
+
+    MAP_Interrupt_enableInterrupt(INT_EUSCIA0); //enable UART interrupt on USCIA0
+
+    MAP_Interrupt_enableInterrupt(INT_PORT1);
+
+    //MAP_Timer_A_enableInterrupt(TIMER_A0_BASE);
+
+    //MAP_Interrupt_enableSleepOnIsrExit();
+    MAP_Interrupt_enableMaster();
+
+
+
+    for(j = 0; j < sizeof(HC); j++){    //initial empty receive array from HC-05(RSSI)
+        HC[j] = '\0';
+    }
+
+    for(k = 0; k < sizeof(drive); k++){ //initial empty drive instruction array
+        drive[k] = '\0';
+    }
+
+    while(1)
+    {
+        if(start == 1){
+            while(HC[i] != '\0'){
+                MAP_UART_transmitData(EUSCI_A2_BASE, HC[i]);    //transmitting all data from HC-05 one by one
+                i++;
+            }
+            //MAP_UART_transmitData(EUSCI_A2_BASE, '\n');
+            i = 0;
+            start = 0;
+            for(j = 0; j < sizeof(HC); j++){                    //empty before filling with another instruction
+                    HC[j] = '\0';
+            }
+        }
+
+        if(drive_start == 1){
+            while(l != m){
+                if(isdigit(drive[l])){                  //received number of forward drive instructions
+                    drive_count = (drive[l] - '0') * 2;
+                    drive_forward();
+                    l++;
+                }
+                else if(drive[l] == 'r'){               //received right turn instruction
+                    rightTurn();
+                    l++;
+                }
+                else if(drive[l] == 'l'){               //received left turn instruction
+                    leftTurn();
+                    l++;
+                }
+            }
+
+            l = 0;
+            for(k = 0; k < sizeof(drive); k++){     //fill array with null before refilling
+                drive[k] = '\0';
+            }
+            m = 0;
+            drive_start = 0;
+        }
+
+        if(positioningT == 1){
+            drone1_forward(3374500);
+            drone2_forward(3374500);
+            positioningT = 0;
+        }
+
+        if(positioningS == 1){
+            drone1_forward(2084250);
+            drone1_right();
+            drone1_forward(1290250);
+            drone1_left();
+            drone2_forward(2084250);
+            drone2_left();
+            drone2_forward(1290250);
+            drone2_right();
+            positioningS = 0;
+        }
+
+        if(positioningB == 1){
+            drone1_forward(4588000);
+            drone1_right();
+            drone1_forward(1389500);
+            drone1_left();
+            drone2_forward(3573000);
+            drone2_left();
+            drone2_forward(2392130);
+            drone2_right();
+            positioningB = 0;
+        }
+
+        if(positioningL == 1){
+            positioningL = 0;
+        }
+    }
+}
+
+/*void EUSCIA0_IRQHandler(void){
+    uint32_t status1 = MAP_UART_getEnabledInterruptStatus(EUSCI_A0_BASE);
+
+    MAP_UART_clearInterruptFlag(EUSCI_A0_BASE, status1);
+
+    if(status1 && EUSCI_A_UART_RECEIVE_INTERRUPT_FLAG && start == 0){
+        uint8_t receiveByte0 = MAP_UART_receiveData(EUSCI_A0_BASE);
+
+        if(receiveByte0 != '\n'){
+            HC[i] = receiveByte0;
+            i++;
+        }
+        else{
+            HC[i] = receiveByte0;
+            i = 0;
+            start = 1;
+        }
+    }
+}*/
+
+void EUSCIA2_IRQHandler(void){
+    uint32_t status = MAP_UART_getEnabledInterruptStatus(EUSCI_A2_BASE);
+
+    MAP_UART_clearInterruptFlag(EUSCI_A2_BASE, status);
+
+    positioningT = 0;
+    positioningB = 0;
+    positioningS = 0;
+    positioningL = 0;
+
+    if(status && EUSCI_A_UART_RECEIVE_INTERRUPT_FLAG && drive_start == 0/* && positioningT == 0 && positioningB == 0 && positioningS == 0 && positioningL == 0*/){
+        uint8_t receiveByte = MAP_UART_receiveData(EUSCI_A2_BASE);
+
+        if(receiveByte == 'X' && drive_start == 1){
+            MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6);    //IN3
+            MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);    //IN4
+            MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);    //IN1
+            MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);    //IN2
+            MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+            MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+        }
+
+        if(drive_start == 0){
+            if(receiveByte == 'T'){
+                positioningT = 1;
+            }
+            else if(receiveByte == 'B'){
+                positioningB = 1;
+            }
+            else if(receiveByte == 'S'){
+                positioningS = 1;
+            }
+            else if(receiveByte == 'L'){
+                positioningL = 1;
+            }
+
+            else if(receiveByte != '\r'){
+                drive[l] = receiveByte;
+                m++;
+                l++;
+            }
+            else{
+                drive[l] = receiveByte;
+                l = 0;
+                drive_start = 1;
+            }
+        }
+
+    }
+            //MAP_Interrupt_disableSleepOnIsrExit();
+}
+
+
+void PORT1_IRQHandler(void){
+    uint32_t reed_status = MAP_GPIO_getEnabledInterruptStatus(GPIO_PORT_P1);
+    MAP_GPIO_clearInterruptFlag(GPIO_PORT_P1, reed_status);
+
+    if(reed_status & GPIO_PIN7 && drive_start == 1){
+        drive_count--;
+        MAP_GPIO_toggleOutputOnPin(GPIO_PORT_P1, GPIO_PIN0);
+    }
+}
+
+void TA1_0_IRQHandler(void){
+    MAP_Timer_A_stopTimer(TIMER_A1_BASE);
+    MAP_Timer_A_clearInterruptFlag(TIMER_A1_BASE);
+    timerA1 = 0;
+}
+
+void rightTurn(void){
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN6);   //IN3
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);    //IN4
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P3, GPIO_PIN0);   //IN1
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);    //IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'r');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'r');
+    int h = 1500000;
+    while(h != 0){
+        h--;
+    }
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6);    //IN3
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);    //IN4
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);    //IN1
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);    //IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
+
+void leftTurn(void){
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6);    //IN3
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN7);   //IN4
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);    //IN1
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P5, GPIO_PIN6);   //IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'l');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'l');
+    int h = 1500000;
+    while(h != 0){
+        h--;
+    }
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6);    //IN3
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);    //IN4
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);    //IN1
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);    //IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
+
+void drive_forward(void){
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P2, GPIO_PIN6);//IN3
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);//IN4
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);//IN1
+    MAP_GPIO_setOutputHighOnPin(GPIO_PORT_P5, GPIO_PIN6);//IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'f');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'f');
+    while(drive_count != 0){
+
+    }
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN6);    //IN3
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P2, GPIO_PIN7);    //IN4
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P3, GPIO_PIN0);    //IN1
+    MAP_GPIO_setOutputLowOnPin(GPIO_PORT_P5, GPIO_PIN6);    //IN2
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
+
+void drone1_forward(int t){
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'f');
+    int h = t;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+}
+
+void drone2_forward(int t){
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'f');
+    int h = t;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
+
+void drone1_right(void){
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'r');
+    int h = 1600000;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+}
+
+void drone2_right(void){
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'r');
+    int h = 1600000;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
+
+void drone1_left(void){
+    MAP_UART_transmitData(EUSCI_A0_BASE, 'l');
+    int h = 1400000;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A0_BASE, 's');
+}
+
+void drone2_left(void){
+    MAP_UART_transmitData(EUSCI_A1_BASE, 'l');
+    int h = 1600000;
+    while(h != 0){
+        h--;
+    }
+    MAP_UART_transmitData(EUSCI_A1_BASE, 's');
+}
