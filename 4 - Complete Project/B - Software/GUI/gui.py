@@ -18,13 +18,15 @@ rxbuf = ''
 surface = None
 room_table = []
 room_sample = np.array([])
-wheel_circumference = 0.01 #we can change this value later
+wheel_circumference = 2.0*np.pi/12.0/3.0 #value in feet - 3 magnets on wheel
 x_scale = 0
 y_scale = 0
 x_size = 0
 y_size = 0
 start = (0,0)
+directions = ''
 instruction = ''
+reverse_instruction = ''
 
 class MyWindow(Gtk.Window):
 
@@ -34,7 +36,7 @@ class MyWindow(Gtk.Window):
         global rxbuf
         global start
 
-        with open('room1.csv',newline='') as room: #to create table for room drawing, make an array of tuples with coordinates
+        with open('demo.csv',newline='') as room: #to create table for room drawing, make an array of tuples with coordinates
             reader = csv.reader(room, delimiter=',', quotechar='|')
             for row in reader:
                 room_table = room_table + [(float(row[0]),float(row[1]))]
@@ -84,6 +86,9 @@ class MyWindow(Gtk.Window):
         stop_button = Gtk.Button(label = "Emergency Stop")
         stop_button.connect("clicked", self.stop_clicked)
 
+        return_button = Gtk.Button(label = "Return")
+        return_button.connect("clicked", self.return_clicked)
+
         shape_store = Gtk.ListStore(str)
         shapes = ["Straight Line", "Box", "Stool", "T-beam"]
         for shape in shapes:
@@ -98,6 +103,7 @@ class MyWindow(Gtk.Window):
         vbox.pack_start(shape_combo, False, False, True)
         vbox.pack_start(shape_button, False, False, True)
         vbox.pack_start(start_button, False, False, True)
+        vbox.pack_start(return_button, False, False, True)
         vbox.pack_start(stop_button, False, False, True)
 
         self.room_map = Gtk.DrawingArea() #clickable area for route determination
@@ -155,26 +161,31 @@ class MyWindow(Gtk.Window):
         global shape
         txchar = ''
         if shape == "Straight Line":
-            txchar = 'l'
+            txchar = 'L'
         elif shape == "Box":
-            txchar = 'b'
+            txchar = 'B'
         elif shape == "Stool":
-            txchar = 's'
+            txchar = 'S'
         elif shape == "T-beam":
-            txchar = 't'
+            txchar = 'T'
         else:
             txchar = 'l' #default shape should be straight line
         print("Character to be sent is:", txchar)
         sock.send(txchar)
 
     def start_clicked(self,widget):
-        global instruction
-        print('instruction: ',instruction)
+        global directions
+        print('directions: ',instruction)
         sock.send(instruction + '\r')
 
     def stop_clicked(self, widget):
         print('Character to be sent is: X')
         sock.send('X')
+
+    def return_clicked(self, widget):
+        global reverse_instruction
+        print('directions: ', reverse_instruction)
+        sock.send(reverse_instruction + '\r')
 
     def draw(self, widget, event, color, da):
         global room_table
@@ -353,7 +364,9 @@ class MyWindow(Gtk.Window):
         cr.stroke()
 
     def solve(self,grid,start,goal,div): #the actual pathfinding algorithm
+        global directions
         global instruction
+        global reverse_instruction
         global wheel_circumference
         print(grid)
         path = np.array([[goal[0],goal[1],0]]) #start at the goal point with counter 0
@@ -422,7 +435,7 @@ class MyWindow(Gtk.Window):
             print('start not in path:',len(start_in_path)==0)
             print('start:',start)
             ctr += 1
-        if ctr > 3: #make sure path doesn't resolve too soon
+        if ctr > 10: #make sure path doesn't resolve too soon
             #now that all branches are made, count backwards to get from start to goal
             route = path[path[:,0]==start[0]]
             route = route[route[:,1]==start[1]]
@@ -455,22 +468,115 @@ class MyWindow(Gtk.Window):
                 
             print('route:',route)
 
-            instruction = '' #this is what the queen robot will receive
+            directions = '' #this is what the queen robot will receive
+            instruction = ''
 
             for n,point in enumerate(route[:-1]):
                 move = route[n+1] - point
                 print(move)
 
                 if (move==np.array([-1,0,-1])).all():
-                    instruction += 'U'*int(div/wheel_circumference)
+                    directions += 'U'*int(div/wheel_circumference)
                 elif (move==np.array([1,0,-1])).all():
-                    instruction += 'D'*int(div/wheel_circumference)
+                    directions += 'D'*int(div/wheel_circumference)
                 elif (move==np.array([0,-1,-1])).all():
-                    instruction += 'L'*int(div/wheel_circumference)
+                    directions += 'L'*int(div/wheel_circumference)
                 elif (move==np.array([0,1,-1])).all():
-                    instruction += 'R'*int(div/wheel_circumference)
+                    directions += 'R'*int(div/wheel_circumference)
+
+            print(directions)
+
+            steps = 1
+            for i in range(len(directions)):
+                if directions[i] == 'U':
+                    if i!=0:
+                        if directions[i-1]=='U':
+                            steps += 1
+                            if steps==9:
+                                instruction += str(steps)
+                                steps = 0
+                        elif directions[i-1]=='R':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'l'
+
+                        elif directions[i-1]=='L':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'r'
+
+                if directions[i] == 'R':
+                    if i!=0:
+                        if directions[i-1]=='R':
+                            steps += 1
+                            if steps==9:
+                                instruction += str(steps)
+                                steps = 0
+                        elif directions[i-1]=='D':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'l'
+
+                        elif directions[i-1]=='U':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'r'
+                    else:
+                        instruction += 'r'
+
+                if directions[i] == 'D':
+                    if i!=0:
+                        if directions[i-1]=='D':
+                            steps += 1
+                            if steps==9:
+                                instruction += str(steps)
+                                steps = 0
+                        elif directions[i-1]=='L':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'l'
+
+                        elif directions[i-1]=='R':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'r'
+                    else:
+                        instruction += 'rr'
+
+                if directions[i] == 'L':
+                    if i!=0:
+                        if directions[i-1]=='L':
+                            steps += 1
+                            if steps==9:
+                                instruction += str(steps)
+                                steps = 0
+                        elif directions[i-1]=='U':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'l'
+
+                        elif directions[i-1]=='D':
+                            instruction += str(steps)
+                            steps = 1
+                            instruction += 'r'
+                    else:
+                        instruction += 'l'
+                if i==len(directions)-1:
+                    instruction += str(steps)
+
 
             print(instruction)
+            
+            reverse_instruction = 'rr'
+            for char in instruction[::-1]:
+                if char == 'l':
+                    reverse_instruction += 'r'
+                elif char == 'r':
+                    reverse_instruction += 'l'
+                else:
+                    reverse_instruction += char
+
+            print(reverse_instruction)
 
             return route
 
@@ -508,4 +614,5 @@ win.show_all()
 #rxer.start()
 Gtk.main()
 print('exit here')
+sock.close()
 #rxer.stop()
